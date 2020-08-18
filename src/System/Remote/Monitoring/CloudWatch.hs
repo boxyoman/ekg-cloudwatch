@@ -145,8 +145,7 @@ diffSamples prev !curr = Map.foldlWithKey' combine Map.empty curr
     diffMetric (Metrics.Distribution d1) (Metrics.Distribution d2)
       | Distribution.count d1 == Distribution.count d2 = Nothing
       | otherwise =
-        Just . Metrics.Distribution $
-        d2 {Distribution.count = Distribution.count d2 - Distribution.count d1}
+        Just . Metrics.Distribution $ d2
     diffMetric _ _ = Nothing
 
 metricToDatum :: [Dimension] -> Text -> Metrics.Value -> Maybe MetricDatum
