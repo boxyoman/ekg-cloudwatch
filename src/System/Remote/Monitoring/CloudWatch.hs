@@ -101,52 +101,24 @@ swallowOnError _ = pure ()
 forkCloudWatch :: CloudWatchEnv -> Metrics.Store -> IO CloudWatchId
 forkCloudWatch env store = do
   me <- myThreadId
-  fmap CloudWatchId . forkFinally (loop env store mempty) $ \case
+  fmap CloudWatchId . forkFinally (loop env store) $ \case
     Left e -> throwTo me e
     Right _ -> pure ()
 
-loop :: CloudWatchEnv -> Metrics.Store -> Metrics.Sample -> IO ()
-loop env store lastSample = do
+loop :: CloudWatchEnv -> Metrics.Store -> IO ()
+loop env store = do
   start <- time
-  sample <- Metrics.sampleAll store
-  flushSample env (diffSamples lastSample sample)
+  sample <- Metrics.sampleAndResetAll store
+  flushSample env (sample)
   end <- time
   threadDelay (cweFlushInterval env * 1000 - fromIntegral (end - start))
-  loop env store sample
+  loop env store
 
 -- | Microseconds since epoch. Vendored from `ekg-statsd`
 time :: IO Int64
 time = round . (* 1000000.0) . toDouble <$> getPOSIXTime
   where
     toDouble = realToFrac :: NominalDiffTime -> Double
-
--- | Vendored from `ekg-statsd`
-diffSamples :: Metrics.Sample -> Metrics.Sample -> Metrics.Sample
-diffSamples prev !curr = Map.foldlWithKey' combine Map.empty curr
-  where
-    combine m name new =
-      case Map.lookup name prev of
-        Just old ->
-          case diffMetric old new of
-            Just val -> Map.insert name val m
-            Nothing  -> m
-        _ -> Map.insert name new m
-
-    diffMetric :: Metrics.Value -> Metrics.Value -> Maybe Metrics.Value
-    diffMetric (Metrics.Counter n1) (Metrics.Counter n2)
-      | n1 == n2 = Nothing
-      | otherwise = Just $! Metrics.Counter $ n2 - n1
-    diffMetric (Metrics.Gauge n1) (Metrics.Gauge n2)
-      | n1 == n2 = Nothing
-      | otherwise = Just $ Metrics.Gauge n2
-    diffMetric (Metrics.Label n1) (Metrics.Label n2)
-      | n1 == n2 = Nothing
-      | otherwise = Just $ Metrics.Label n2
-    diffMetric (Metrics.Distribution d1) (Metrics.Distribution d2)
-      | Distribution.count d1 == Distribution.count d2 = Nothing
-      | otherwise =
-        Just . Metrics.Distribution $ d2
-    diffMetric _ _ = Nothing
 
 metricToDatum :: [Dimension] -> Text -> Metrics.Value -> Maybe MetricDatum
 metricToDatum dim name val = case val of
